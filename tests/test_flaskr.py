@@ -144,6 +144,84 @@ class TestFlaskr:
             # the database state is not guaranteed. In a real-world scenario,
             # you might want to set up a known database state before running this test.
 
+    def test_delete_entry_unauthorized(self):
+        """
+        Test that unauthorized users cannot delete entries.
+        """
+        with app.test_client() as client:
+            # Try to delete an entry without being logged in
+            response = client.post('/delete/1')
+            assert response.status_code == 401
+
+    def test_delete_entry_authorized(self):
+        """
+        Test that authorized users can delete entries.
+        """
+        with app.test_client() as client:
+            # First, log in
+            client.post('/login', data={
+                'username': app.config['USERNAME'],
+                'password': app.config['PASSWORD']
+            })
+            
+            # Initialize database and add a test entry
+            with app.app_context():
+                init_db()
+                db = get_db()
+                db.execute('INSERT INTO entries (title, text) VALUES (?, ?)',
+                          ['Test Title', 'Test Content'])
+                db.commit()
+                
+                # Get the entry ID
+                cur = db.execute('SELECT id FROM entries WHERE title = ?', ['Test Title'])
+                entry = cur.fetchone()
+                entry_id = entry['id']
+            
+            # Delete the entry
+            response = client.post(f'/delete/{entry_id}', follow_redirects=True)
+            assert response.status_code == 200
+            assert b'Entry was successfully deleted' in response.data
+            
+            # Verify the entry was deleted from the database
+            with app.app_context():
+                db = get_db()
+                cur = db.execute('SELECT * FROM entries WHERE id = ?', [entry_id])
+                deleted_entry = cur.fetchone()
+                assert deleted_entry is None
+
+    def test_add_entry_authorized(self):
+        """
+        Test that authorized users can add entries.
+        """
+        with app.test_client() as client:
+            # First, log in
+            client.post('/login', data={
+                'username': app.config['USERNAME'],
+                'password': app.config['PASSWORD']
+            })
+            
+            # Initialize database
+            with app.app_context():
+                init_db()
+            
+            # Add an entry
+            response = client.post('/add', data={
+                'title': 'Test Entry',
+                'text': 'This is a test entry'
+            }, follow_redirects=True)
+            
+            assert response.status_code == 200
+            assert b'New entry was successfully posted' in response.data
+            
+            # Verify the entry was added to the database
+            with app.app_context():
+                db = get_db()
+                cur = db.execute('SELECT * FROM entries WHERE title = ?', ['Test Entry'])
+                entry = cur.fetchone()
+                assert entry is not None
+                assert entry['title'] == 'Test Entry'
+                assert entry['text'] == 'This is a test entry'
+
 
 
 class AuthActions(object):
